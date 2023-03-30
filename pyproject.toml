@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "the-lottery"
+version = "0.1.0"
+description = ""
+authors = ["ephe-meral <j.appel.online@gmail.com>"]
+readme = "README.md"
+packages = [{include = "the_lottery"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+bitcoinlib = "^0.6.9"
+jupyter = "^1.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
