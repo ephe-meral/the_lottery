@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import axios from 'axios';
+import base64 from 'base-64';
 
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
@@ -56,7 +57,14 @@ export default function App() {
     const [priv, pub, addr] = generateKey();
     //const addr = 'bc1qxhmdufsvnuaaaer4ynz88fspdsxq2h9e9cetdj' - debug
     axios
-      .get(`https://api.covalenthq.com/v1/btc-mainnet/address/${addr}/balances_v2/?key=${apiKey}`)
+      // .get(`https://api.covalenthq.com/v1/btc-mainnet/address/${addr}/balances_v2/?key=${apiKey}`,
+      .get(`https://api.covalenthq.com/v1/btc-mainnet/address/${addr}/balances_v2/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Basic ' + base64.encode(`${apiKey}:`)
+          }
+        })
       .then((res) => {
         if (res.data) {
           const bal = (res.data.data.items.reduce((a, x) => (x.balance+a), 0) / (10**8));
