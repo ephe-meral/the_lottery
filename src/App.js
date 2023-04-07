@@ -43,6 +43,16 @@ function formatKeys([pub, priv, addr, bal]) {
   );
 }
 
+function logKeys([pub, priv, addr, bal]) {
+  console.log('Public key:', pub);
+  console.log('Private key:', priv);
+  console.log('Address:', addr);
+  console.log('Balance:', bal);
+  console.log('---------------------');
+}
+
+const bitcoinGenesisAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
+
 
 export default function App() {
   const [apiKey, setApiKey] = useLocalStorage('');
@@ -50,11 +60,12 @@ export default function App() {
   const [keyCount, setKeyCount] = useState(1);
   const [loading, setLoading] = useState(false);
 
+  const [apiWorks, setApiWorks] = useState(false);
   const [results, setResults] = useState([]);
   const [resultTexts, setResultTexts] = useState([]);
 
-  const checkRandomKeyCovalent = useCallback(() => {
-    const [priv, pub, addr] = generateKey();
+  const checkRandomKeyCovalent = useCallback((check=false) => {
+    const [priv, pub, addr] = check ? ['', '', bitcoinGenesisAddress] : generateKey();
     //const addr = 'bc1qxhmdufsvnuaaaer4ynz88fspdsxq2h9e9cetdj' - debug
     axios
       // .get(`https://api.covalenthq.com/v1/btc-mainnet/address/${addr}/balances_v2/?key=${apiKey}`,
@@ -68,15 +79,23 @@ export default function App() {
       .then((res) => {
         if (res.data) {
           const bal = (res.data.data.items.reduce((a, x) => (x.balance+a), 0) / (10**8));
-          console.log('PKey:', priv);
-          console.log('Pub:', pub);
-          console.log('Address:', addr);
-          console.log('Query result:', bal);
-          console.log('---------------------');
-          setResults(current => [
-            ...current,
-            [priv, pub, addr, bal]
-          ]);
+          if (!check) {
+            logKeys([priv, pub, addr, bal]);
+            setResults(current => [
+              ...current,
+              [priv, pub, addr, bal]
+            ]);
+          }
+          if (check && bal > 0) {
+            setApiWorks(true);
+          }
+          if (check && bal === 0) {
+            setApiWorks(false);
+            setResultTexts([
+              'Error: The API does not deliver correct balance results.',
+            ]);
+            setLoading(false);
+          }
         }
       })
       .catch((err) => {
@@ -90,7 +109,7 @@ export default function App() {
   }, [apiKey]);
         
 
-  const checkRandomKeyFree = async () => {
+  const checkRandomKeyFree = async (check=false) => {
     const [priv, pub, addr] = generateKey();
     axios
       //.get(`https://blockstream.info/api/address/${addr}`) - CORS issues
@@ -98,15 +117,23 @@ export default function App() {
       .then((res) => {
         if (res.data) {
           const bal = (res.data.final_balance / 10**8);
-          console.log('PKey:', priv);
-          console.log('Pub:', pub);
-          console.log('Address:', addr);
-          console.log('Query result:', bal);
-          console.log('---------------------');
-          setResults(current => [
-            ...current,
-            [priv, pub, addr, bal]
-          ]);
+          if (!check) {
+            logKeys([priv, pub, addr, bal]);
+            setResults(current => [
+              ...current,
+              [priv, pub, addr, bal]
+            ]);
+          }
+          if (check && bal > 0) {
+            setApiWorks(true);
+          }
+          if (check && bal === 0) {
+            setApiWorks(false);
+            setResultTexts([
+              'Error: The API does not deliver correct balance results.',
+            ]);
+            setLoading(false);
+          }
         }
       })
       .catch((err) => {
@@ -126,16 +153,21 @@ export default function App() {
   };
 
   useEffect(() => {
+    const checkAPIWorks = () => (apiKey ? checkRandomKeyCovalent(true) : checkRandomKeyFree(true))
     const fetchNext = () => (apiKey ? checkRandomKeyCovalent() : checkRandomKeyFree())
-    if (loading && results.length < keyCount) {
-      setTimeout(fetchNext, 300)
+    if (loading && !apiWorks) {
+      setTimeout(checkAPIWorks, 300);
     }
-  }, [apiKey, loading, results, checkRandomKeyCovalent, keyCount])
+    if (loading && apiWorks && results.length < keyCount) {
+      setTimeout(fetchNext, 300);
+    }
+  }, [apiKey, loading, apiWorks, results, checkRandomKeyCovalent, keyCount]);
 
   useEffect(() => {
     const highestBalance = results.reduce((acc, curr) => Math.max(acc, curr[3]), 0);
     if (results.length > 0) {
       setResultTexts([
+        `API check succeeded. Now generating keys.`,
         `You have generated ${results.length} keys so far.`
       ].concat((highestBalance > 0)
         ? [
