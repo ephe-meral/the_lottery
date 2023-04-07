@@ -54,6 +54,34 @@ function logKeys([pub, priv, addr, bal]) {
 const bitcoinGenesisAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
 
 
+const apis = {
+  'covalenthq.com': {
+    free: false,
+    axiosGet: ({ addr, apiKey }) => (
+      axios.get(`https://api.covalenthq.com/v1/btc-mainnet/address/${addr}/balances_v2/`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Basic ' + base64.encode(`${apiKey}:`)
+        }
+      })),
+    extractBalance: (res) => (res.data.data.items.reduce((a, x) => (x.balance+a), 0) / (10**8)),
+    errorInfo: 'Please check if the API key is correct (should start with "ckey_") and if you have enough requests left.',
+  },
+  'blockstream.info': {
+    free: true,
+    axiosGet: ({ addr }) => (axios.get(`https://blockstream.info/api/address/${addr}`)),
+    extractBalance: (res) => ((res.data.chain_stats.funded_txo_sum - res.data.chain_stats.spent_txo_sum) / 10**8),
+    errorInfo: 'The free provider might be blocking your requests. Try using a free API key from "covalenthq.com"'
+  },
+  'blockchain.info': {
+    free: true,
+    axiosGet: ({ addr }) => (axios.get(`https://blockchain.info/rawaddr/${addr}`)),
+    extractBalance: (res) => (res.data.final_balance / 10**8),
+    errorInfo: 'The free provider might be blocking your requests. Try using a free API key from "covalenthq.com"'
+  }
+}
+
+
 export default function App() {
   const [apiKey, setApiKey] = useLocalStorage('');
 
@@ -64,21 +92,15 @@ export default function App() {
   const [results, setResults] = useState([]);
   const [resultTexts, setResultTexts] = useState([]);
 
-  const checkRandomKeyCovalent = useCallback((check=false) => {
+  // Can check if the API works by fetching the genesis address and checking if it has a balance
+  const fetchNextKey = useCallback((check=false) => {
     const [priv, pub, addr] = check ? ['', '', bitcoinGenesisAddress] : generateKey();
-    //const addr = 'bc1qxhmdufsvnuaaaer4ynz88fspdsxq2h9e9cetdj' - debug
-    axios
-      // .get(`https://api.covalenthq.com/v1/btc-mainnet/address/${addr}/balances_v2/?key=${apiKey}`,
-      .get(`https://api.covalenthq.com/v1/btc-mainnet/address/${addr}/balances_v2/`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Basic ' + base64.encode(`${apiKey}:`)
-          }
-        })
+    const api = !apiKey ? apis['blockchain.info'] : apis['covalenthq.com'];
+    
+    api.axiosGet({ addr, apiKey })
       .then((res) => {
         if (res.data) {
-          const bal = (res.data.data.items.reduce((a, x) => (x.balance+a), 0) / (10**8));
+          const bal = api.extractBalance(res);
           if (!check) {
             logKeys([priv, pub, addr, bal]);
             setResults(current => [
@@ -101,50 +123,12 @@ export default function App() {
       .catch((err) => {
         setResultTexts([
           'Error: Something went wrong.',
-          'Please check if the API key is correct (should start with "ckey_") and if you have enough requests left.'
+          api.errorInfo
         ]);
         console.log('Error:', err);
         setLoading(false);
       });
   }, [apiKey]);
-        
-
-  const checkRandomKeyFree = async (check=false) => {
-    const [priv, pub, addr] = generateKey();
-    axios
-      //.get(`https://blockstream.info/api/address/${addr}`) - CORS issues
-      .get(`https://blockchain.info/rawaddr/${addr}`)
-      .then((res) => {
-        if (res.data) {
-          const bal = (res.data.final_balance / 10**8);
-          if (!check) {
-            logKeys([priv, pub, addr, bal]);
-            setResults(current => [
-              ...current,
-              [priv, pub, addr, bal]
-            ]);
-          }
-          if (check && bal > 0) {
-            setApiWorks(true);
-          }
-          if (check && bal === 0) {
-            setApiWorks(false);
-            setResultTexts([
-              'Error: The API does not deliver correct balance results.',
-            ]);
-            setLoading(false);
-          }
-        }
-      })
-      .catch((err) => {
-        setResultTexts([
-          'Error: Something went wrong.',
-          'The free provider, "blockchain.info" might be blocking your requests. Try using a free API key from "covalenthq.com"'
-        ]);
-        console.log('Error:', err);
-        setLoading(false);
-      });
-  };
 
   const onSubmit = (values) => {
     setResults([]);
@@ -153,15 +137,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    const checkAPIWorks = () => (apiKey ? checkRandomKeyCovalent(true) : checkRandomKeyFree(true))
-    const fetchNext = () => (apiKey ? checkRandomKeyCovalent() : checkRandomKeyFree())
     if (loading && !apiWorks) {
-      setTimeout(checkAPIWorks, 300);
+      // Do check run with genesis address first
+      setTimeout(fetchNextKey(true), 300);
     }
     if (loading && apiWorks && results.length < keyCount) {
-      setTimeout(fetchNext, 300);
+      setTimeout(fetchNextKey, 300);
     }
-  }, [apiKey, loading, apiWorks, results, checkRandomKeyCovalent, keyCount]);
+  }, [loading, apiWorks, fetchNextKey, results, keyCount]);
 
   useEffect(() => {
     const highestBalance = results.reduce((acc, curr) => Math.max(acc, curr[3]), 0);
